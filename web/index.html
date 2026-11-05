@@ -1,0 +1,611 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OCS 题库配置生成器 · OpenCode Go</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --line: #e4e7ec;
+    --text: #1d2430;
+    --muted: #6b7280;
+    --accent: #3b5bdb;
+    --accent-soft: #eef2ff;
+    --ok: #0f8a5f;
+    --ok-soft: #e8f7f0;
+    --warn: #a15c00;
+    --warn-soft: #fdf3e2;
+    --code-bg: #f3f4f6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171c;
+      --card: #1b1f26;
+      --line: #2b313a;
+      --text: #e6e8ec;
+      --muted: #98a1ae;
+      --accent: #8aa4ff;
+      --accent-soft: #232a3d;
+      --ok: #4ecfa0;
+      --ok-soft: #14322a;
+      --warn: #e8b168;
+      --warn-soft: #33281a;
+      --code-bg: #12151a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 32px 20px 64px;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  header { margin-bottom: 24px; }
+  h1 { font-size: 24px; margin: 0 0 6px; letter-spacing: -0.01em; }
+  header p { margin: 0; color: var(--muted); }
+  h2 { font-size: 15px; margin: 0 0 14px; letter-spacing: 0.01em; }
+  h2 .tag {
+    font-weight: 500; font-size: 11px; padding: 2px 7px; border-radius: 99px;
+    background: var(--accent-soft); color: var(--accent); margin-left: 8px; vertical-align: 2px;
+  }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 20px; margin-bottom: 16px;
+  }
+  main .card { margin-bottom: 0; }
+  label { display: block; margin-bottom: 14px; font-size: 13px; color: var(--muted); }
+  label > span.pill { color: var(--accent); font-weight: 600; font-variant-numeric: tabular-nums; }
+  input[type="text"], input[type="password"], input[type="number"], select, textarea {
+    display: block; width: 100%; margin-top: 5px; padding: 8px 10px;
+    border: 1px solid var(--line); border-radius: 8px; background: var(--card);
+    color: var(--text); font: inherit; font-size: 14px;
+  }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+  textarea { resize: vertical; font-family: ui-monospace, Consolas, monospace; font-size: 13px; }
+  input[type="range"] { width: 100%; margin-top: 8px; accent-color: var(--accent); }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .row > label { margin-bottom: 10px; }
+  .check { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); margin: -6px 0 12px; }
+  .check input { margin: 0; accent-color: var(--accent); }
+  .hint { font-size: 12px; color: var(--muted); margin: -6px 0 16px; line-height: 1.6; }
+  .hint code, .code { font-family: ui-monospace, Consolas, monospace; }
+  .code {
+    background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px;
+    padding: 12px; font-size: 12.5px; line-height: 1.55; overflow: auto; margin: 0;
+    white-space: pre; max-height: 460px; tab-size: 2;
+  }
+  .code.small { max-height: none; margin-bottom: 10px; padding: 9px 11px; }
+  #json { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; }
+  .actions .hint { margin: 0; }
+  button {
+    font: inherit; font-size: 13.5px; padding: 8px 14px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--card); color: var(--text); cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { filter: brightness(1.08); color: #fff; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.link { border: 0; background: none; padding: 0; color: var(--accent); text-decoration: underline; font-size: 12px; }
+  .result { margin-top: 14px; }
+  .result:empty { display: none; }
+  .verdict {
+    display: flex; gap: 10px; align-items: baseline; padding: 11px 13px;
+    border-radius: 8px; font-size: 13.5px; margin-bottom: 10px;
+  }
+  .verdict.ok { background: var(--ok-soft); color: var(--ok); }
+  .verdict.bad { background: var(--warn-soft); color: var(--warn); }
+  .verdict b { font-size: 15px; }
+  .verdict small { color: inherit; opacity: 0.75; }
+  .kv { display: grid; grid-template-columns: 96px 1fr; gap: 4px 10px; font-size: 12.5px; margin-bottom: 10px; }
+  .kv dt { color: var(--muted); white-space: nowrap; }
+  .kv dd { margin: 0; font-family: ui-monospace, Consolas, monospace; word-break: break-all; }
+  details { margin-top: 10px; font-size: 12.5px; }
+  summary { cursor: pointer; color: var(--muted); }
+  details .code { margin-top: 8px; max-height: 260px; }
+  footer { margin-top: 28px; font-size: 12px; color: var(--muted); text-align: center; }
+  .err { background: var(--warn-soft); color: var(--warn); padding: 10px 12px; border-radius: 8px; font-size: 13px; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>OCS 题库配置生成器</h1>
+    <p>填好钥匙和模型，右边就是可以直接粘进 OCS 的配置。不联网也能用，只有「真实测试」需要本地小服务。</p>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>1. 钥匙与模型</h2>
+
+      <label>
+        OpenCode API key
+        <input id="key" type="password" placeholder="oc_sk_..." autocomplete="off" spellcheck="false" />
+      </label>
+      <div class="check">
+        <input type="checkbox" id="remember" />
+        <label for="remember">在这台电脑记住钥匙（存 localStorage，公用电脑别勾）</label>
+      </div>
+      <p class="hint">
+        去 <a href="https://opencode.ai/console" target="_blank" rel="noreferrer">opencode.ai/console</a> →
+        Account → Personal API keys 拿，需要先订阅 Go。钥匙只会在你点「真实测试」时发出去。
+      </p>
+
+      <label>
+        模型
+        <input id="model" type="text" list="modelList" spellcheck="false" value="deepseek-v4.1-flash" />
+        <datalist id="modelList"></datalist>
+      </label>
+      <p class="hint" id="modelHint"></p>
+
+      <h2>2. 参数</h2>
+      <div class="row">
+        <label>
+          运行环境
+          <select id="envType">
+            <option value="fetch">OCS 客户端软件</option>
+            <option value="GM_xmlhttpRequest">油猴 / 脚本猫</option>
+          </select>
+        </label>
+        <label>
+          最大输出 token
+          <input id="maxTokens" type="number" min="64" max="4096" step="64" value="512" />
+        </label>
+      </div>
+
+      <label>
+        置信度阈值 <span class="pill" id="confVal">0.50</span>
+        <input id="confidence" type="range" min="0" max="1" step="0.05" value="0.5" />
+      </label>
+      <p class="hint">模型自己觉得没把握时会给低分，低于这条线就放弃作答，让 OCS 显示「未找到」，而不是瞎填一个。调成 0 就是有答案必填。</p>
+
+      <label>
+        会话 ID
+        <input id="session" type="text" spellcheck="false" />
+      </label>
+      <p class="hint">OpenCode 要求每个请求带一个固定 ID，随便填，只影响路由和缓存。<button class="link" id="regen" type="button">换一个</button></p>
+    </section>
+
+    <section class="card">
+      <h2>3. 配置</h2>
+      <div class="check" style="margin:0 0 10px">
+        <input type="checkbox" id="collapse" checked />
+        <label for="collapse">预览时折叠内置 JS（复制和下载仍然是完整内容）</label>
+      </div>
+      <pre id="json" class="code"></pre>
+      <div class="actions">
+        <button id="copy" class="primary" type="button">复制配置</button>
+        <button id="download" type="button">下载 config.json</button>
+        <span id="copyTip" class="hint"></span>
+      </div>
+      <p class="hint" style="margin-top:12px">复制后打开 OCS 设置，找到「题库配置」那个能贴 JSON 的框，整段粘进去保存。<span id="size"></span></p>
+    </section>
+  </main>
+
+  <section class="card" style="margin-top:16px">
+    <h2>离线自检 <span class="tag">不用联网</span></h2>
+    <p class="hint">造一道题、编一段「模型会返回什么」，看看这份配置怎么解析，以及 OCS 最后会点中哪个选项。这段逻辑和 OCS 里跑的是同一套。</p>
+    <div class="row">
+      <label>
+        题型
+        <select id="tType">
+          <option value="single">单选题</option>
+          <option value="multiple">多选题</option>
+          <option value="judgement">判断题</option>
+          <option value="completion">填空题</option>
+        </select>
+      </label>
+      <label>
+        题目
+        <input id="tTitle" type="text" value="光合作用的产物是什么？" />
+      </label>
+    </div>
+    <label>
+      选项（每行一个，填空题留空）
+      <textarea id="tOptions" rows="4">A. 有机物和氧气
+B. 二氧化碳和水
+C. 只有氧气
+D. 只有有机物</textarea>
+    </label>
+    <label>
+      模型会返回的内容
+      <span style="text-transform:none">（写它「说的话」就行，也可以直接贴完整响应）</span>
+      <textarea id="tResp" rows="2">{"kind":"choice","answer":"A","confidence":0.95}</textarea>
+    </label>    <div class="actions">
+      <button id="runSelf" class="primary" type="button">运行自检</button>
+      <span class="hint">Ctrl / ⌘ + Enter</span>
+    </div>
+    <div id="selfOut" class="result"></div>
+  </section>
+
+  <section class="card">
+    <h2>真实测试 <span class="tag">需要本地小服务</span></h2>
+    <div id="liveOff">
+      <p class="hint" style="margin-top:0">
+        浏览器直接请求 opencode.ai 会被跨域拦下来（对方没开 CORS），所以真实测试要起一个本地小服务做转发：
+      </p>
+      <pre class="code small">node serve.mjs</pre>
+      <p class="hint">然后打开 <code>http://127.0.0.1:8787</code>。你现在是直接打开的这个文件，所以测试按钮先关着。</p>
+    </div>
+    <div id="liveOn" hidden>
+      <p class="hint" style="margin-top:0">拿上面那道题，真的问一次模型，看它给你什么、用了多久。</p>
+      <div class="actions" style="margin-top:0">
+        <button id="runLive" class="primary" type="button">用真模型回答</button>
+        <span class="hint" id="liveTip"></span>
+      </div>
+      <div id="liveOut" class="result"></div>
+    </div>
+  </section>
+
+  <footer>
+    配置结构、解析逻辑、答案匹配算法都来自仓库里的同一份源码，不是这里另写的一份。
+  </footer>
+</div>
+
+<script src="wrapper.js"></script>
+<script src="ocs-match.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  var MODELS = [
+    ['deepseek-v4.1-flash', '默认。中文题答得准，额度最高（每月约 21 万次请求）'],
+    ['glm-5.3-flash', '更快更稳，中文也不错，省额度'],
+    ['gpt-6-luna', '最快最便宜的一档'],
+    ['mimo-v2.6-flash', '额度大，响应快'],
+    ['longcat-2.0', '额度大，响应快'],
+    ['qwen3.8-flash', '中文题感好'],
+    ['glm-5.3', '更强一点，但慢一些'],
+    ['kimi-k2.7-code', '代码题强']
+  ];
+
+  var STORE_KEY = 'ocs-opencode-go:settings';
+
+  /* ---------- 初始化 ---------- */
+
+  $('modelList').innerHTML = MODELS.map(function (m) {
+    return '<option value="' + m[0] + '"></option>';
+  }).join('');
+
+  $('session').value = 'ses_ocsgo_' + Math.random().toString(16).slice(2, 14);
+
+  restore();
+  bind();
+  render();
+
+  function restore() {
+    var saved;
+    try { saved = JSON.parse(localStorage.getItem(STORE_KEY) || 'null'); } catch (e) { saved = null; }
+    if (!saved) return;
+    if (saved.model) $('model').value = saved.model;
+    if (saved.envType) $('envType').value = saved.envType;
+    if (saved.maxTokens) $('maxTokens').value = saved.maxTokens;
+    if (saved.confidence !== undefined) $('confidence').value = saved.confidence;
+    if (saved.session) $('session').value = saved.session;
+    if (saved.key) { $('key').value = saved.key; $('remember').checked = true; }
+  }
+
+  function persist() {
+    var data = {
+      model: $('model').value.trim(),
+      envType: $('envType').value,
+      maxTokens: Number($('maxTokens').value) || 512,
+      confidence: Number($('confidence').value),
+      session: $('session').value.trim(),
+      key: $('remember').checked ? $('key').value.trim() : ''
+    };
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(data)); } catch (e) { /* 隐私模式下写不进去，忽略 */ }
+  }
+
+  function bind() {
+    ['model', 'envType', 'maxTokens', 'confidence', 'session', 'remember', 'collapse'].forEach(function (id) {
+      $(id).addEventListener('input', function () { persist(); render(); });
+      $(id).addEventListener('change', function () { persist(); render(); });
+    });
+    $('key').addEventListener('input', function () { persist(); render(); });
+    $('regen').addEventListener('click', function () {
+      $('session').value = 'ses_ocsgo_' + Math.random().toString(16).slice(2, 14);
+      persist(); render();
+    });
+    $('copy').addEventListener('click', copyConfig);
+    $('download').addEventListener('click', downloadConfig);
+    $('runSelf').addEventListener('click', runSelfTest);
+    $('runLive').addEventListener('click', runLiveTest);
+    document.addEventListener('keydown', function (e) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); runSelfTest(); }
+    });
+    checkServer();
+  }
+
+  /* ---------- 生成配置 ---------- */
+
+  // handler 里的阈值是写死的，这里按滑杆替换；替换失败必须报错，否则界面显示的值和实际行为会对不上
+  function withConfidence(handler, value) {
+    var re = /var MIN_CONFIDENCE = [0-9.]+;/;
+    if (!re.test(handler)) throw new Error('handler 里找不到 MIN_CONFIDENCE，可能是源码被改过');
+    return handler.replace(re, 'var MIN_CONFIDENCE = ' + value + ';');
+  }
+
+  function currentConfig() {
+    var model = $('model').value.trim() || 'deepseek-v4.1-flash';
+    var key = $('key').value.trim() || 'oc_sk_REPLACE_ME';
+    var conf = Number($('confidence').value);
+
+    var wrapper = JSON.parse(JSON.stringify(window.OCS_WRAPPER));
+    wrapper.name = 'OpenCode Go · ' + model;
+    wrapper.type = $('envType').value;
+    wrapper.headers.Authorization = 'Bearer ' + key;
+    wrapper.headers['x-opencode-session'] = $('session').value.trim() || 'ses_ocsgo_web';
+    wrapper.data.model = model;
+    wrapper.data.max_tokens = Number($('maxTokens').value) || 512;
+    wrapper.handler = withConfidence(wrapper.handler, conf);
+    return [wrapper];
+  }
+
+  // 只影响预览：把两段内置 JS 收成一行注释，免得几百字符挤成一条线看不清
+  function displayConfig(config) {
+    if (!$('collapse').checked) return config;
+    var copy = JSON.parse(JSON.stringify(config));
+    copy.forEach(function (w) {
+      var note = function (n) { return '/* 内置 JS，共 ' + n + ' 字符 · 预览已折叠，复制/下载是完整内容 */'; };
+      if (typeof w.handler === 'string') w.handler = note(w.handler.length);
+      if (w.data && w.data.messages && typeof w.data.messages.handler === 'string') {
+        w.data.messages.handler = note(w.data.messages.handler.length);
+      }
+    });
+    return copy;
+  }
+
+  function render() {
+    var conf = Number($('confidence').value);
+    $('confVal').textContent = conf.toFixed(2);
+    var hint = MODELS.filter(function (m) { return m[0] === $('model').value.trim(); })[0];
+    $('modelHint').textContent = hint ? hint[1] : '不在推荐清单里，也可以直接用 OpenCode Go 的其它 model id。';
+    try {
+      var full = JSON.stringify(currentConfig(), null, 2);
+      $('json').textContent = JSON.stringify(displayConfig(currentConfig()), null, 2);
+      $('size').textContent = '当前配置 ' + full.length + ' 字符（约 ' + (full.length / 1024).toFixed(1) + ' KB）。';
+    } catch (e) {
+      $('json').textContent = '生成失败：' + e.message;
+      $('size').textContent = '';
+    }
+    updateLiveTip();
+  }
+
+  function copyConfig() {
+    var text;
+    try { text = JSON.stringify(currentConfig(), null, 2); } catch (e) { return flash('生成失败'); }
+    var done = function () { flash('已复制，去 OCS 里粘贴吧'); };
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(done, fallback);
+    } else {
+      fallback();
+    }
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); done(); } catch (e) { flash('复制失败，手动全选吧'); }
+      document.body.removeChild(ta);
+    }
+  }
+
+  function flash(msg) {
+    $('copyTip').textContent = msg;
+    clearTimeout(flash._t);
+    flash._t = setTimeout(function () { $('copyTip').textContent = ''; }, 2400);
+  }
+
+  function downloadConfig() {
+    var text;
+    try { text = JSON.stringify(currentConfig(), null, 2); } catch (e) { return; }
+    var blob = new Blob([text], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'config.json';
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+  }
+
+  /* ---------- 自检逻辑 ---------- */
+
+  function envFromForm() {
+    return {
+      title: $('tTitle').value,
+      type: $('tType').value,
+      options: $('tOptions').value
+    };
+  }
+
+  function runPipeline(responseObject) {
+    var wrapper = currentConfig()[0];
+    var responseFn = Function(wrapper.handler)();
+    var messagesFn = Function(wrapper.data.messages.handler)();
+    var env = envFromForm();
+
+    var messages = messagesFn({ title: env.title, type: env.type, options: env.options });
+    var out = responseFn(responseObject);
+    return { out: out, messages: messages, env: env };
+  }
+
+  function judge(env, answer) {
+    var options = env.options.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+    var M = window.OCSMatch;
+    var r;
+    if (env.type === 'single') r = M.resolveSingle([answer], options);
+    else if (env.type === 'multiple') r = M.resolveMultiple([answer], options);
+    else if (env.type === 'judgement') r = M.resolveJudgement([answer], options);
+    else {
+      var blanks = (env.title.match(/_{2,}/g) || []).length || 1;
+      r = M.resolveCompletion([answer], blanks);
+    }
+    var picked = !r || !r.finish ? [] : (r.answers || r.options || r.plainOptions || (r.option ? [r.option] : []));
+    return { result: r, picked: picked, options: options };
+  }
+
+  function renderResult(host, payload) {
+    var out = payload.out;
+    var html = '';
+
+    if (out === undefined) {
+      html +=
+        '<div class="verdict bad"><b>不回答</b><small>这份配置选择放弃这题，OCS 会显示「未找到」，你可以自己答。</small></div>' +
+        '<div class="kv"><dt>可能原因</dt><dd>置信度低于阈值、接口报错、或模型输出不是能认的 JSON（细节看浏览器控制台）</dd></div>';
+      if (payload.raw !== undefined) {
+        html += '<div class="kv"><dt>模型原话</dt><dd>' + esc(String(payload.raw)) + '</dd></div>';
+      }
+      host.innerHTML = html;
+      return;
+    }
+
+    var answer = out[1];
+    var verdict = judge(payload.env, answer);
+    if (verdict.picked.length) {
+      html +=
+        '<div class="verdict ok"><b>OCS 会选：' + esc(verdict.picked.join(' / ')) + '</b><small>答案 = ' + esc(answer) + '</small></div>';
+    } else {
+      html +=
+        '<div class="verdict bad"><b>答案没匹配上选项</b><small>OCS 会把这道题记为未找到</small></div>';
+    }
+    html += '<div class="kv"><dt>解析出的答案</dt><dd>' + esc(answer) + '</dd></div>';
+    if (payload.meta) {
+      Object.keys(payload.meta).forEach(function (k) {
+        html += '<div class="kv"><dt>' + esc(k) + '</dt><dd>' + esc(payload.meta[k]) + '</dd></div>';
+      });
+    }
+    html +=
+      '<details><summary>看看发给模型的是什么（' + payload.messages.length + ' 条消息）</summary><pre class="code">' +
+      esc(JSON.stringify(payload.messages, null, 2)) +
+      '</pre></details>';
+    host.innerHTML = html;
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+
+  // 用户填的可能是「模型说的话」，也可能是完整响应；统一包成 handler 期待的形状
+  function toApiResponse(parsed, fallbackText) {
+    if (parsed && typeof parsed === 'object' && (parsed.choices || parsed.error)) return parsed;
+    var content = typeof parsed === 'string' ? parsed : parsed === null ? fallbackText : JSON.stringify(parsed);
+    return { choices: [{ message: { content: String(content) } }] };
+  }
+
+  function runSelfTest() {
+    var host = $('selfOut');
+    var raw = $('tResp').value.trim();
+    var parsed = null;
+    try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
+
+    try {
+      var payload = runPipeline(toApiResponse(parsed, raw));
+      payload.raw = parsed === null ? raw : payload.raw;
+      renderResult(host, payload);
+    } catch (e) {
+      host.innerHTML = '<div class="err">自检失败：' + esc(e.message) + '</div>';
+    }
+  }
+
+  /* ---------- 真实测试 ---------- */
+
+  var serverReady = false;
+
+  function checkServer() {
+    fetch('/api/health', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d || !d.ok) return;
+        serverReady = true;
+        $('liveOff').hidden = true;
+        $('liveOn').hidden = false;
+        updateLiveTip();
+      })
+      .catch(function () { /* 直接打开文件时正常失败，保持离线态 */ });
+  }
+
+  function updateLiveTip() {
+    var key = $('key').value.trim();
+    $('runLive').disabled = !serverReady || key.length < 10;
+    $('liveTip').textContent = key.length < 10 ? '先在上面填钥匙' : '';
+  }
+
+  function runLiveTest() {
+    updateLiveTip();
+    var host = $('liveOut');
+    host.innerHTML = '<div class="hint">请求中…</div>';
+
+    var wrapper = currentConfig()[0];
+    var messagesFn = Function(wrapper.data.messages.handler)();
+    var env = envFromForm();
+    var messages = messagesFn({ title: env.title, type: env.type, options: env.options });
+    var started = Date.now();
+
+    fetch('/api/test', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        apiKey: $('key').value.trim(),
+        model: wrapper.data.model,
+        sessionId: wrapper.headers['x-opencode-session'],
+        maxTokens: wrapper.data.max_tokens,
+        messages: messages
+      })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var ms = Date.now() - started;
+        if (data.error) {
+          host.innerHTML = '<div class="err">本地服务出错：' + esc(data.error) + '</div>';
+          return;
+        }
+        var body;
+        try {
+          body = JSON.parse(data.text);
+        } catch (e) {
+          host.innerHTML = '<div class="err">上游返回的不是 JSON（HTTP ' + data.status + '）：<pre class="code small">' + esc(data.text.slice(0, 400)) + '</pre></div>';
+          return;
+        }
+        if (body.error) {
+          host.innerHTML =
+            '<div class="err">OpenCode 报错（HTTP ' + data.status + '）：' + esc(body.error.message || body.error.type || JSON.stringify(body.error)) + '</div>';
+          return;
+        }
+        var payload;
+        try {
+          payload = runPipeline(body);
+        } catch (e) {
+          host.innerHTML = '<div class="err">解析失败：' + esc(e.message) + '</div>';
+          return;
+        }
+        payload.raw = body.choices && body.choices[0] && body.choices[0].message && body.choices[0].message.content;
+        payload.meta = { 'HTTP 状态': String(data.status), '耗时': ms + ' ms', '模型': wrapper.data.model };
+        renderResult(host, payload);
+      })
+      .catch(function (e) {
+        host.innerHTML = '<div class="err">请求本地服务失败：' + esc(e.message) + '（serve.mjs 还开着吗？）</div>';
+      });
+  }
+
+  updateLiveTip();
+
+  // 给自动化检查用：打开 index.html#demo 会自动跑一次离线自检
+  if (location.hash === '#demo') {
+    setTimeout(runSelfTest, 80);
+  }
+})();
+</script>
+</body>
+</html>

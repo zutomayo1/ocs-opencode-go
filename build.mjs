@@ -9,7 +9,7 @@
 //   node build.mjs                              # 只生成 config.json（占位符）
 //   $env:OC_API_KEY = "oc_sk_..."; node build.mjs   # 额外生成 config.local.json
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -69,3 +69,38 @@ if (apiKey) {
 } else {
   console.log('（没有设置 OC_API_KEY，只生成了带占位符的 config.json）');
 }
+
+/* ------------------------------------------------------------------ *
+ * 给 web/ 生成前端要用的两个文件。
+ * 目的：网页和命令行共用同一份配置结构 / 同一套匹配算法，不会各写一份然后漂移。
+ * ------------------------------------------------------------------ */
+
+const webDir = join(here, 'web');
+mkdirSync(webDir, { recursive: true });
+
+function checkSyntax(code, label) {
+  try {
+    new Function(code); // 只解析不执行
+  } catch (e) {
+    throw new Error(label + ' 语法错误：' + e.message);
+  }
+}
+
+// 1. wrapper 模板：结构、两个 handler 都对，只有 key / 模型 / 会话是占位符，页面负责替换
+const template = build(PLACEHOLDER)[0];
+template.name = 'OpenCode Go';
+const wrapperJs = '/* 由 build.mjs 自动生成，勿手改 */\nwindow.OCS_WRAPPER = ' + JSON.stringify(template, null, 2) + ';\n';
+checkSyntax(wrapperJs.replace('window.OCS_WRAPPER =', 'var OCS_WRAPPER ='));
+writeFileSync(join(webDir, 'wrapper.js'), wrapperJs, 'utf8');
+console.log('已生成：web/wrapper.js');
+
+// 2. 答案匹配算法：把 test/ocs-match.mjs 的 export 去掉塞进 IIFE，浏览器里当普通脚本加载
+const matcher = readFileSync(join(here, 'test', 'ocs-match.mjs'), 'utf8').replace(/^export\s+/gm, '');
+const matcherJs =
+  '/* 由 test/ocs-match.mjs 自动生成，勿手改 */\n(function () {\n' +
+  matcher +
+  '\nwindow.OCSMatch = { resolveSingle, resolveMultiple, resolveJudgement, resolveCompletion, isJudgementOptions, splitAnswer, removeRedundant, resolvePlainAnswer };\n})();\n';
+checkSyntax(matcherJs);
+writeFileSync(join(webDir, 'ocs-match.js'), matcherJs, 'utf8');
+console.log('已生成：web/ocs-match.js');
+
