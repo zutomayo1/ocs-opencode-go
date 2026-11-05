@@ -21,6 +21,8 @@ const DIRECT_URL = 'https://opencode.ai/inference/go/openai/v1/chat/completions'
 const PROXY_URL = 'http://127.0.0.1:8787/v1/chat/completions';
 // node build.mjs --proxy ：把请求地址换成本地转发口，OCS 里报「连接超时 / 连接失败」时用
 const useProxy = process.argv.includes('--proxy');
+// node build.mjs --gm ：油猴 / 脚本猫版。脚本里的 fetch 一样会被跨域拦住，必须用 GM_xmlhttpRequest
+const useGM = process.argv.includes('--gm') || process.argv.includes('--userscript');
 
 const CONFIG = {
   // Go 套餐里可换的模型见 README「换模型」一节
@@ -32,14 +34,14 @@ const CONFIG = {
   maxTokens: 512
 };
 
-const build = (apiKey, proxy = false) => [
+const build = (apiKey, proxy = false, gm = false) => [
   {
     name: 'OpenCode Go · ' + CONFIG.model + (proxy ? '（本地代理）' : ''),
     homepage: 'https://opencode.ai/v2/docs/console/go',
     url: proxy ? PROXY_URL : DIRECT_URL,
     method: 'post',
     contentType: 'json',
-    type: CONFIG.requestType,
+    type: gm ? 'GM_xmlhttpRequest' : CONFIG.requestType,
     headers: {
       'Content-Type': 'application/json',
       Authorization: 'Bearer ' + apiKey,
@@ -69,7 +71,7 @@ write(join(here, 'config.json'), build(PLACEHOLDER));
 const apiKey = (process.env.OC_API_KEY || '').trim();
 if (apiKey) {
   if (!/^oc_sk_/.test(apiKey)) console.warn('⚠ 环境变量 OC_API_KEY 看起来不像 OpenCode 的 key（应以 oc_sk_ 开头）');
-  write(join(here, 'config.local.json'), build(apiKey, useProxy));
+  write(join(here, 'config.local.json'), build(apiKey, useProxy, useGM));
 } else {
   console.log('（没有设置 OC_API_KEY，只生成了带占位符的 config.json）');
 }
