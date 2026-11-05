@@ -1,0 +1,24 @@
+[
+  {
+    "name": "OpenCode Go · deepseek-v4.1-flash",
+    "homepage": "https://opencode.ai/v2/docs/console/go",
+    "url": "https://opencode.ai/inference/go/openai/v1/chat/completions",
+    "method": "post",
+    "contentType": "json",
+    "type": "fetch",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer oc_sk_REPLACE_ME",
+      "x-opencode-session": "ses_ocsgo_7f3c1a9d2b4e"
+    },
+    "data": {
+      "model": "deepseek-v4.1-flash",
+      "stream": false,
+      "max_tokens": 512,
+      "messages": {
+        "handler": "return (env) => {\n  var title = String(env.title || '').trim();\n  var options = String(env.options || '').trim();\n  var typeNames = { single: '单选题', multiple: '多选题', judgement: '判断题', completion: '填空题' };\n  var typeName = typeNames[env.type] || '选择题';\n\n  var system = '你是网课自动答题引擎，只输出答案数据。你只输出一个 JSON 对象，不要 Markdown 代码块，不要解释、不要前后缀。';\n\n  var user = [\n    '题型：' + typeName,\n    '题目：' + title,\n    options ? '选项（每行一个）：\\n' + options : '选项：无，这是填空题，直接给出答案原文。',\n    '',\n    '作答规则：',\n    '1. 单选题：kind 填 \"choice\"，answer 只写一个选项字母，例如 \"B\"。',\n    '2. 多选题：kind 填 \"choice\"，answer 只写选中的字母并按字母升序拼接，例如 \"AC\"，不要逗号、空格或 #。',\n    '3. 判断题：kind 填 \"text\"，answer 原样照抄正确选项的文字（去掉开头 \"A.\" 这类字母标号），例如 \"对\"、\"正确\"、\"是\"，不要改写措辞。',\n    '4. 填空题：kind 填 \"text\"，answer 写答案原文；有多个空时按顺序用 # 连接。',\n    '5. confidence 是 0 到 1 的小数，表示你的把握；没把握就给低分，不要硬编。',\n    '',\n    '只输出一行 JSON，形如 {\"kind\":\"choice\",\"answer\":\"A\",\"confidence\":0.9}'\n  ].join('\\n');\n\n  return [\n    { role: 'system', content: system },\n    { role: 'user', content: user }\n  ];\n};"
+      }
+    },
+    "handler": "return (res) => {\n  // 置信度阈值：模型给出低于该值的答案时直接放弃，让 OCS 显示\"未搜索到\"，而不是乱选一个。\n  var MIN_CONFIDENCE = 0.5;\n  var TAG = '[OCS/OpenCode]';\n\n  if (!res) {\n    console.warn(TAG, '空响应');\n    return undefined;\n  }\n\n  if (res.error) {\n    console.error(TAG, '接口报错：', (res.error && (res.error.message || res.error.type)) || res.error);\n    return undefined;\n  }\n\n  var content = res.choices && res.choices[0] && res.choices[0].message && res.choices[0].message.content;\n  if (!content) {\n    console.warn(TAG, '响应里没有 choices[0].message.content：', res);\n    return undefined;\n  }\n\n  // 模型偶尔会套一层 ```json 围栏\n  var text = String(content).replace(/```[a-zA-Z]*/g, '').trim();\n\n  var data = null;\n  try {\n    data = JSON.parse(text);\n  } catch (e) {\n    data = null;\n  }\n\n  // 兜底：JSON 没解析出来，就从文本里硬抠 answer\n  if (!data || typeof data !== 'object') {\n    var hit = text.match(/\"answer\"\\s*:\\s*\"([^\"]*)\"/i) || text.match(/answer\\s*[:：]\\s*([A-Ja-j]{1,8})/i);\n    if (!hit) {\n      console.warn(TAG, '无法解析模型输出：', text);\n      return undefined;\n    }\n    data = { kind: 'choice', answer: hit[1], confidence: 1 };\n  }\n\n  var answer = String(data.answer == null ? '' : data.answer)\n    .replace(/^(答案|选项|answer)\\s*[:：]\\s*/i, '')\n    .trim();\n  if (!answer) {\n    console.warn(TAG, '答案为空：', text);\n    return undefined;\n  }\n\n  var confidence = Number(data.confidence);\n  if (!isFinite(confidence)) confidence = 1;\n  if (confidence < MIN_CONFIDENCE) {\n    console.warn(TAG, '置信度 ' + confidence + ' 低于阈值 ' + MIN_CONFIDENCE + '，放弃作答：', answer);\n    return undefined;\n  }\n\n  var kind = String(data.kind || '').toLowerCase();\n  var letters = answer.replace(/[^A-Ja-j]/g, '');\n  // kind 缺失时按形状猜：只由 A-J 和常见分隔符组成、且字母不超过 8 个，就当选择题答案\n  var looksLikeChoice =\n    kind === 'choice' ||\n    (kind !== 'text' && letters.length > 0 && letters.length <= 8 && /^[A-Ja-j\\s,，、.．;；#\\-]+$/.test(answer));\n\n  if (looksLikeChoice) {\n    if (!letters) {\n      console.warn(TAG, '选择题答案里没有选项字母：', answer);\n      return undefined;\n    }\n    answer = letters\n      .toUpperCase()\n      .split('')\n      .filter(function (c, i, arr) {\n        return arr.indexOf(c) === i;\n      })\n      .sort()\n      .join('');\n  }\n\n  // 题目传 undefined，OCS 会自动显示它搜索到的那道题\n  return [undefined, answer];\n};"
+  }
+]
