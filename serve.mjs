@@ -114,6 +114,11 @@ async function proxyChat(req, res) {
     res.writeHead(204, CORS);
     return res.end();
   }
+  // 有些题库的「测试连通性」会先来个 GET，给个 200 让它过，别把 405 当断线
+  if (req.method === 'GET' || req.method === 'HEAD') {
+    res.writeHead(200, { ...CORS, 'content-type': 'application/json; charset=utf-8' });
+    return res.end(JSON.stringify({ ok: true, note: '这是 OpenCode Go 的本地转发口，答题请用 POST' }));
+  }
   if (req.method !== 'POST') {
     res.writeHead(405, { ...CORS, 'content-type': 'application/json; charset=utf-8' });
     return res.end(JSON.stringify({ error: '请用 POST' }));
