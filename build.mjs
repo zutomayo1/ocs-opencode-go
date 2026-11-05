@@ -32,11 +32,11 @@ const CONFIG = {
   maxTokens: 512
 };
 
-const build = (apiKey) => [
+const build = (apiKey, proxy = false) => [
   {
-    name: 'OpenCode Go · ' + CONFIG.model + (useProxy ? '（本地代理）' : ''),
+    name: 'OpenCode Go · ' + CONFIG.model + (proxy ? '（本地代理）' : ''),
     homepage: 'https://opencode.ai/v2/docs/console/go',
-    url: useProxy ? PROXY_URL : DIRECT_URL,
+    url: proxy ? PROXY_URL : DIRECT_URL,
     method: 'post',
     contentType: 'json',
     type: CONFIG.requestType,
@@ -69,7 +69,7 @@ write(join(here, 'config.json'), build(PLACEHOLDER));
 const apiKey = (process.env.OC_API_KEY || '').trim();
 if (apiKey) {
   if (!/^oc_sk_/.test(apiKey)) console.warn('⚠ 环境变量 OC_API_KEY 看起来不像 OpenCode 的 key（应以 oc_sk_ 开头）');
-  write(join(here, 'config.local.json'), build(apiKey));
+  write(join(here, 'config.local.json'), build(apiKey, useProxy));
 } else {
   console.log('（没有设置 OC_API_KEY，只生成了带占位符的 config.json）');
 }
