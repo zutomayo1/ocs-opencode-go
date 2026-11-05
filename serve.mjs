@@ -95,8 +95,68 @@ async function proxyTest(req, res) {
   }
 }
 
-async function serveStatic(pathname, res) {
-  const rel = pathname === '/' ? '/index.html' : pathname;
+/* ------------------------------------------------------------------ *
+ * /v1/chat/completions —— 给 OCS 用的转发口。
+ * OCS 软件里如果直连 opencode.ai 报「连接超时 / 连接失败」，通常是跨域被拦，
+ * 把题库配置的 url 指到这里就行：OCS 只跟 127.0.0.1 说话，不跨域。
+ * 这里带上了 CORS 头，浏览器里也能直连。
+ * ------------------------------------------------------------------ */
+
+const CORS = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-headers': 'authorization, content-type, x-opencode-session',
+  'access-control-allow-methods': 'POST, OPTIONS',
+  'access-control-max-age': '600'
+};
+
+async function proxyChat(req, res) {
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, CORS);
+    return res.end();
+  }
+  if (req.method !== 'POST') {
+    res.writeHead(405, { ...CORS, 'content-type': 'application/json; charset=utf-8' });
+    return res.end(JSON.stringify({ error: '请用 POST' }));
+  }
+
+  const started = Date.now();
+  const auth = req.headers.authorization || '';
+  let body;
+  let model = '(未知)';
+  try {
+    body = await readBody(req);
+    const parsed = JSON.parse(body);
+    model = parsed.model || model;
+  } catch (e) {
+    res.writeHead(400, { ...CORS, 'content-type': 'application/json; charset=utf-8' });
+    return res.end(JSON.stringify({ error: { type: 'bad_request', message: '请求体不是合法 JSON' } }));
+  }
+
+  try {
+    const upstream = await fetch(UPSTREAM, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: auth,
+        'x-opencode-session': String(req.headers['x-opencode-session'] || 'ses_ocsgo_proxy'),
+        'user-agent': 'ocs-answerer-proxy/1.0'
+      },
+      body,
+      signal: AbortSignal.timeout(55000)
+    });
+    const text = await upstream.text();
+    console.log(`[proxy] ${model} → HTTP ${upstream.status}  ${Date.now() - started}ms`);
+    res.writeHead(upstream.status, { ...CORS, 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+    res.end(text);
+  } catch (e) {
+    const msg = e && e.name === 'TimeoutError' ? '上游 55 秒没响应' : String((e && e.message) || e);
+    console.log('[proxy] 失败：' + msg);
+    res.writeHead(502, { ...CORS, 'content-type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ error: { type: 'proxy_error', message: msg } }));
+  }
+}
+
+async function serveStatic(pathname, res) {  const rel = pathname === '/' ? '/index.html' : pathname;
   const filePath = resolve(WEB, '.' + decodeURIComponent(rel));
   if (!filePath.startsWith(resolve(WEB))) return sendJson(res, 403, { error: '越界了' });
 
@@ -117,6 +177,7 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
   try {
     if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true });
+    if (url.pathname === '/v1/chat/completions') return await proxyChat(req, res);
     if (url.pathname === '/api/test') {
       if (req.method !== 'POST') return sendJson(res, 405, { error: '请用 POST' });
       return await proxyTest(req, res);

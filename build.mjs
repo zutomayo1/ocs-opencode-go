@@ -17,6 +17,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 const read = (p) => readFileSync(join(here, p), 'utf8').trim();
 
 const PLACEHOLDER = 'oc_sk_REPLACE_ME';
+const DIRECT_URL = 'https://opencode.ai/inference/go/openai/v1/chat/completions';
+const PROXY_URL = 'http://127.0.0.1:8787/v1/chat/completions';
+// node build.mjs --proxy ：把请求地址换成本地转发口，OCS 里报「连接超时 / 连接失败」时用
+const useProxy = process.argv.includes('--proxy');
 
 const CONFIG = {
   // Go 套餐里可换的模型见 README「换模型」一节
@@ -30,9 +34,9 @@ const CONFIG = {
 
 const build = (apiKey) => [
   {
-    name: 'OpenCode Go · ' + CONFIG.model,
+    name: 'OpenCode Go · ' + CONFIG.model + (useProxy ? '（本地代理）' : ''),
     homepage: 'https://opencode.ai/v2/docs/console/go',
-    url: 'https://opencode.ai/inference/go/openai/v1/chat/completions',
+    url: useProxy ? PROXY_URL : DIRECT_URL,
     method: 'post',
     contentType: 'json',
     type: CONFIG.requestType,

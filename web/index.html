@@ -160,6 +160,15 @@
       </div>
 
       <label>
+        请求地址
+        <select id="endpoint">
+          <option value="direct">直连 opencode.ai（推荐，不用开任何东西）</option>
+          <option value="proxy">走本地代理 127.0.0.1:8787</option>
+        </select>
+      </label>
+      <p class="hint">OCS 里保存后显示「连接超时」「连接失败」的，基本都是跨域被拦住了，选下面那个：先跑 <code>node serve.mjs</code> 再回来生成。走代理时，答题期间别关那个窗口。</p>
+
+      <label>
         置信度阈值 <span class="pill" id="confVal">0.50</span>
         <input id="confidence" type="range" min="0" max="1" step="0.05" value="0.5" />
       </label>
@@ -287,6 +296,7 @@ D. 只有有机物</textarea>
     if (!saved) return;
     if (saved.model) $('model').value = saved.model;
     if (saved.envType) $('envType').value = saved.envType;
+    if (saved.endpoint) $('endpoint').value = saved.endpoint;
     if (saved.maxTokens) $('maxTokens').value = saved.maxTokens;
     if (saved.confidence !== undefined) $('confidence').value = saved.confidence;
     if (saved.session) $('session').value = saved.session;
@@ -297,6 +307,7 @@ D. 只有有机物</textarea>
     var data = {
       model: $('model').value.trim(),
       envType: $('envType').value,
+      endpoint: $('endpoint').value,
       maxTokens: Number($('maxTokens').value) || 512,
       confidence: Number($('confidence').value),
       session: $('session').value.trim(),
@@ -306,7 +317,7 @@ D. 只有有机物</textarea>
   }
 
   function bind() {
-    ['model', 'envType', 'maxTokens', 'confidence', 'session', 'remember', 'collapse'].forEach(function (id) {
+    ['model', 'envType', 'maxTokens', 'confidence', 'session', 'remember', 'collapse', 'endpoint'].forEach(function (id) {
       $(id).addEventListener('input', function () { persist(); render(); });
       $(id).addEventListener('change', function () { persist(); render(); });
     });
@@ -342,6 +353,10 @@ D. 只有有机物</textarea>
     var wrapper = JSON.parse(JSON.stringify(window.OCS_WRAPPER));
     wrapper.name = 'OpenCode Go · ' + model;
     wrapper.type = $('envType').value;
+    if ($('endpoint').value === 'proxy') {
+      wrapper.url = 'http://127.0.0.1:8787/v1/chat/completions';
+      wrapper.name += '（本地代理）';
+    }
     wrapper.headers.Authorization = 'Bearer ' + key;
     wrapper.headers['x-opencode-session'] = $('session').value.trim() || 'ses_ocsgo_web';
     wrapper.data.model = model;
