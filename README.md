@@ -1,167 +1,129 @@
-# OCS 题库配置 · OpenCode Go
+# 让 OCS 遇到不会的题时去问 AI
 
-用 OpenCode Go 的模型当 OCS 的「题库」：把每道题连同选项发给模型，让模型只回一个 JSON，再翻译成 OCS 认得的答案格式。
+OCS 本来是从题库网站查答案的。这个项目给它换了个「题库」——一个 AI。
 
-- 交付物：`config.json` —— 整份数组粘进 OCS 的「题库配置」即可
-- 目标环境：**OCS 客户端软件**（`type: "fetch"`）
-- 默认模型：`deepseek-v4.1-flash`
-- 状态：离线自检 38 项全过（`node test/validate.mjs`），联网实测 8 种题型全中，平均 **~2.1 秒/题**
+每遇到一道题，它把题目和选项一起发给 OpenCode 的模型，模型回一个答案，再翻成 OCS 能点的那种格式。就这样，不用买题库、不用到处找接口。
+
+**用起来大概是什么感觉：** 常规题基本 2 秒出一道，选择题、判断题、填空题都能答。模型没把握的题会空着不动，留给你自己答——不会瞎填一个错的上去。
+
+> 本文只讲怎么用。它是怎么实现的、为什么要这么写，放在最后一段。
 
 ---
 
-## 1. 三步接入
+## 三步用上
 
-### ① 拿 Go 的 key
+### 第一步：拿一把钥匙（API key）
 
-1. <https://opencode.ai/console> 订阅 **Go / Go Plus**（$10 / $40 每月，这是 Go 不是按量的 Console 余额）
-2. **Account → Personal API keys → Add API key**，指定一个有 Go 订阅的 workspace，复制 `oc_sk_...`（只显示一次）
+1. 打开 <https://opencode.ai/console>，登录
+2. 订阅 **Go**（每月 $10 那个，不是按量付费的余额）
+3. 进 **Account → Personal API keys → Add API key**，起个名字，创建
+4. 复制那串 `oc_sk_...` —— **只显示这一次**，关掉就没了
 
-> `*-free` 系列模型在非 OpenCode 客户端一律 403，所以只能用 Go 清单里的付费模型。
+### 第二步：把钥匙填进去
 
-### ② 把 key 填进去
-
-两种都行：
+在这个目录下打开 PowerShell：
 
 ```powershell
-# 方式一：环境变量（推荐，key 不落进 build.mjs）
-$env:OC_API_KEY = "oc_sk_xxx"
+$env:OC_API_KEY = "oc_sk_你刚才复制的"
 node build.mjs
-
-# 方式二：把 key 写进 build.mjs 的 CONFIG.apiKey，再 node build.mjs
 ```
 
-也可以直接打开 `config.json`，把 `oc_sk_REPLACE_ME` 换成你的 key（顺手把 `x-opencode-session` 的 `ses_ocsgo_...` 改成你自己的随机串，纯路由用，不影响功能）。
+跑完会多出一个 `config.local.json`，里面就是配好钥匙、可以直接用的配置。
 
-> 当前目录下的 `config.json` 已经用真实 key 生成过一份可直接用的版本。它是**明文密钥**，别提交、别外发；想还原成占位符，去掉 `OC_API_KEY` 环境变量再跑一次 `node build.mjs` 即可。
+> 为什么多一个文件？因为带真钥匙的那份不能传到 GitHub 上。`config.json` 是给仓库看的（钥匙位置写着占位符），`config.local.json` 是给你自己用的，已经被 `.gitignore` 挡在门外。
 
-### ③ 粘进 OCS
+### 第三步：贴进 OCS
 
-OCS 设置面板 →「题库配置」→ 粘贴 `config.json` 的**整个数组** → 保存 → 随便找道题试一次。
+打开 `config.local.json`，**全选、复制**（连开头的 `[` 和结尾的 `]` 一起）。
 
-如果模型选了 `deepseek-*` 并报 403，去 **Console → Settings → Privacy → Regions** 改成 **Global**（默认只放行「欧洲 & 美国」；没保存过地区设置的 workspace 对来自中国的请求也放行 Global，所以有可能直接可用——本次实测就是直接通的）。
+去 OCS 的设置里找到填「题库配置」的地方 —— 一个能贴 JSON 的输入框，把内容整个粘进去，保存。
+
+然后随便找份课，点开始答题，看会不会自动填。
 
 ---
 
-## 2. 这份配置到底在干什么
+## 花多少钱？会限流吗？
 
-```
-OCS 拿到题目 ──> data.messages.handler(env) 拼 messages
-              ──> POST https://opencode.ai/inference/go/openai/v1/chat/completions
-              ──> handler(res) 解析 choices[0].message.content
-              ──> 返回 [undefined, "A"] ──> OCS 用字母点选项
-```
+Go 是**包月**的，$10 一个月，额度按「美元」折算到每个模型上。默认用的 DeepSeek V4.1 Flash 每月额度 $100 等值，官方估算是**每月 21 万次请求**左右。一门课 200 题，你自己算算就知道离用完还有多远。
 
-几个不这么写就会翻车的点：
-
-| 做法 | 原因 |
-| --- | --- |
-| `data.messages` 写成 `{ handler }` | OCS 只对 `data` 的**第一层**字段做 handler 解析，嵌套对象里的 handler 不会被调用 |
-| 必须带 `x-opencode-session` | 缺了直接 `400 MissingSessionID`，实测不是可选头 |
-| 单选/多选回**字母**（`A` / `AC`） | OCS 对纯 ABCD 答案有专门的兜底分支，字母比让模型复述选项原文稳得多 |
-| 判断题回**选项原文**（`对` / `正确`） | OCS 的判断题算法是拿答案去跟选项做关键词等值比较，回字母（`A`）永远匹配不上 |
-| 判断题 / 填空题用 `kind:"text"` | 避免把 `HTML` 这种纯字母答案当成选项字母去排序 |
-| 题目字段回 `undefined` | OCS 会自己显示搜到的题目，不用重复传 |
-| 置信度不够时 `return undefined` | 整条 wrapper 不产出结果 → OCS 记为未找到。**千万别回 `[msg, undefined]`**，答案位允许 `undefined` 会让下游匹配抛错 |
+实际花钱要看你答多少题，但按这个量级，正常上课是花不完的。
 
 ---
 
-## 3. 换模型
+## 出问题了怎么查
 
-只改 `build.mjs` 的 `model`（`name` 会自动跟着变），重跑 `node build.mjs`。Go 清单里适合答题的：
+OCS 上每一道题都显示「未找到答案」的时候，先别急着改配置，去软件里打开控制台看日志（搜「开发者工具」或者按 F12，找 Console 面板）。配置里所有报错都会以 `[OCS/OpenCode]` 开头打在那里。
 
-| model id | 月额度 | 备注 |
-| --- | --- | --- |
-| `deepseek-v4.1-flash` | $100 | 默认。中文强、额度最高，**必须先开 Global 地区** |
-| `glm-5.3-flash` | $60 | 不用改地区，中文稳，速度快，性价比首选 |
-| `glm-5.3` / `glm-5.2` | $15 / $60 | 更强，但慢一些 |
-| `qwen3.8-flash` | $30 | 中文题感好 |
-| `gpt-6-luna` | $15 | 最快最便宜那档 |
-| `mimo-v2.6-flash` / `longcat-2.0` | $60 | 额度大，延迟低 |
-| `kimi-k3` / `kimi-k3.1-pro` | $15 | 长文本强，答题用不上 |
-| `minimax-m3` | $60 | — |
+对着日志里的话看：
 
-注意 OCS 的超时是**写死的 60 秒**（`AnswerWrapperHandlerConfig.timeout_seconds`，题库配置改不了）。所有模型都走 `/openai/v1/chat/completions`，Console 会帮你翻译协议，换模型不用改 url。
+| 日志里写着 | 意思 | 怎么办 |
+|---|---|---|
+| `Invalid credential` | 钥匙不对 | 回第一步重新复制一遍，注意别少了字符 |
+| `403` | 这个模型你的套餐不带，或者根本没订阅 | 换成下面表格里的模型试试 |
+| `MissingSessionID` | 配置被改坏了，少了一行请求头 | 重新跑 `node build.mjs` 生成一份新的 |
+| 一直转圈然后超时 | 模型太慢 | 换更快的模型（见下表） |
+| `Failed to fetch` | 网络连不上 OpenCode | 检查网络或代理；如果是浏览器版 OCS，改用客户端软件 |
 
-`deepseek-v4.1-flash` 实测 8 种题型平均 **2.1 秒**、最慢 2.9 秒，离 60 秒还有很大余量：
-
-```
-✓ 单选·常识        1788ms  A      → A. 有机物和氧气
-✓ 单选·毛概        2312ms  B      → B. 中国共产党领导
-✓ 多选            2360ms  BCD    → B/C/D 三项全中
-✓ 判断·对错        1921ms  对      → A. 对
-✓ 判断·正确/错误    1977ms  错误    → B. 错误
-✓ 填空·单空        2381ms  H2O    → H2O
-✓ 填空·双空        1520ms  叶绿体#氧气 → 拆成两个空
-✓ 不会的题         2850ms  （置信度 0.1，主动弃答）
-```
-
-改完模型可以随时复跑这组测试：
+还有一条很好用的排查办法：直接跑一下
 
 ```powershell
-$env:OC_API_KEY = "oc_sk_xxx"
-node test/live.mjs                 # 单题冒烟，看状态码+耗时
-node test/live-matrix.mjs          # 8 种题型矩阵，用 config.json 里的模型
-node test/live-matrix.mjs glm-5.3-flash   # 临时试别的模型
+node test/live.mjs
 ```
 
----
-
-## 4. 常见报错
-
-响应体里 `error.message` 会打到控制台（`[OCS/OpenCode]` 前缀），对着看：
-
-| 现象 | 原因 |
-| --- | --- |
-| `400 MissingSessionID` | `x-opencode-session` 被删了 |
-| `401 Invalid credential` | key 错/过期，或者这个 key 不属于有 Go 订阅的 workspace |
-| `403` | 用了 `*-free` 模型（非 OpenCode 客户端不给）、模型不在 Go 清单、或地区没开（DeepSeek 默认只放行欧洲&美国） |
-| `429` | 当月额度用完；可去 Console 打开 Extra Usage 兜底到按量余额 |
-| 请求 60 秒超时 | 模型太慢，换 `gpt-6-luna` / `glm-5.3-flash` / `mimo-v2.6-flash` |
-| `Failed to fetch` / 跨域 | 见下一节 |
-
-### 如果软件里报跨域
-
-OpenCode 的网关**没有 CORS 头**（实测 `OPTIONS` 预检直接 404，响应里没有 `Access-Control-Allow-Origin`），所以纯浏览器 `fetch` 是走不通的。客户端软件通常关掉了 `webSecurity` 才能用 `fetch`；万一你这个版本没关：
-
-1. 首选：改用油猴 / 脚本猫加载脚本版，把 `build.mjs` 里 `requestType` 改成 `GM_xmlhttpRequest`，重跑构建；同时脚本头部必须加 `@connect opencode.ai`（否则 Tampermonkey 照样拦），或者直接装官方的「全域名通用版本」。
-2. 次选：本地起一个反代（Caddy/Nginx 加 CORS 头），把 `url` 指向 `http://127.0.0.1:xxxx/openai/v1/chat/completions`。
+它会真的发一次请求，把「状态码、耗时、模型原话」全打出来。通了说明配置没问题，不通说明是钥匙或网络的事。
 
 ---
 
-## 5. 调参
+## 想换个模型
 
-- **置信度阈值**：`src/handler.response.js` 的 `MIN_CONFIDENCE`（当前 `0.5`）。调高 → 更多题被跳过；调成 `0` → 有答案就填。
-- **提示词**：`src/handler.messages.js`。想让模型更保守/更敢猜，改那句「没把握就给低分」即可。
-- **输出长度**：`build.mjs` 的 `maxTokens`（当前 `512`），答题用不上更长的。
-- 改完任何 `src/*.js` 都要 `node build.mjs` 重新生成，**不要手改 `config.json`**（handler 是「字符串里的 JS」，手改转义必翻车）。
+改 `build.mjs` 里那行 `model`，重跑 `node build.mjs`，重新贴一次就换好了。
+
+| 写这个 | 什么感觉 |
+|---|---|
+| `deepseek-v4.1-flash` | 默认值。中文题答得挺准，额度也最高 |
+| `glm-5.3-flash` | 更快、更稳，中文也不错，额度少一些但够用 |
+| `gpt-6-luna` | 最快最便宜的一档 |
+| `mimo-v2.6-flash` / `longcat-2.0` | 额度大、响应快 |
+| `glm-5.3` / `qwen3.8-flash` | 更强一点，但慢一些 |
+
+换完想验一下快不快，跑：
+
+```powershell
+node test/live-matrix.mjs
+```
+
+它会拿 8 道不同类型的题挨个问一遍，把每道题的耗时和答出来的答案列成一张表。
 
 ---
 
-## 6. 已知限制
+## 几句实话
 
-- 一道题 = 一次真实请求，OCS 这层没有缓存钩子可插，**没有去重/缓存**，重复的题会重复计费。
-- 单轮问答，不带上下文；同一门课的相邻题目不会互相参考。
-- 多选题字母只认 `A`–`J`（超过 10 个选项的题会漏）。
-- 判断题完全依赖模型「照抄选项原文」。模型如果只回字母，这道题会记为未找到——这是有意的取舍，宁可空着也不乱填。
-- 填空题多空用 `#` 连接，这是 OCS 自己拆分隔符的规则。
-- 答案对不对取决于模型。建议先小批量跑一门课看准确率，再决定要不要放开。
-
-> 合规提醒：Go 的文档写明它是给 coding agent 用的、有滥用监控，拿它当通用问答/答题器不属于设计用途，被限流或封号的风险需要自己权衡；要长期跑，按量付费的 Console 模型可能更省心。
+- **它不是百分百准。** 常识题、文科题很稳；专业计算题、教材特有的说法容易错。建议先找一门不重要的课跑一遍，看看准确率再决定要不要放开。
+- **每道题都会真发一次请求**，没有缓存。同一道题被问两次，就花两次钱。
+- **Go 套餐本来是给写代码的 AI 用的**，官方文档里明说了有滥用监控。拿它当答题器不是它的设计用途，被限流了别怪我没提醒你。真要长期跑，按量付费的模型反而更省心。
+- **钥匙就是钱。** 别截图发群里，别贴进公开仓库。
 
 ---
 
-## 7. 文件说明
+## 想改代码才看这一段
+
+真正在干活的是两个函数，都在 `src/` 里，用大白话写就行，不用懂 OCS 源码：
+
+- `src/handler.messages.js` —— **把题目变成问题**。决定 AI 看到什么、怎么被要求作答。想让它答得保守一点、或者语气不一样，改这里。
+- `src/handler.response.js` —— **把 AI 的话变成答案**。负责拆 JSON、纠正大小写、判断题换成选项原文、没把握就丢掉。开头的 `MIN_CONFIDENCE = 0.5` 就是「多没把握才放弃」的分数线，调高更保守，调成 0 就变成有答案必填。
+
+改完这两份**必须重跑** `node build.mjs` —— 因为 OCS 要的是「一个字符串里包着一段 JS」，手写 JSON 转义百分百出错，让脚本帮你拼。
+
+然后跑 `node test/validate.mjs` 自检（38 项，不用联网，几秒钟跑完）。它会模拟各种题型，并且用从 OCS 源码搬来的匹配算法验证「我们吐出去的答案，OCS 真的会点中那个选项」——不是只检查 JSON 格式对不对。
+
+文件都在哪：
 
 ```
-ocs-opencode-go/
-├─ config.json              # ← 交付物，整份粘进 OCS
-├─ build.mjs                # 由 src + key 生成 config.json（会自动自检能否编译）
-├─ src/
-│  ├─ handler.messages.js   # 题目 → messages（可读版本，改这个）
-│  └─ handler.response.js   # 响应 → 答案（可读版本，改这个）
-└─ test/
-   ├─ ocs-match.mjs         # 从 OCS 4.0 源码搬来的答案匹配算法，用来验证"OCS 真的会选中它"
-   ├─ validate.mjs          # 离线自检：38 项
-   ├─ live.mjs              # 联网冒烟：真打一次 API，看状态码和耗时
-   └─ live-matrix.mjs       # 联网矩阵：单选/多选/判断/填空/不会的题 各跑一遍
+config.json          ← 仓库里这份，钥匙是占位符
+config.local.json    ← 你本地这份，带真钥匙（不进 git）
+build.mjs            ← 拼配置的脚本
+src/                 ← 两个 handler 的源码，改这里
+test/                ← 自检、联网冒烟、8 种题型矩阵
 ```
+
+还有一个前提条件值得知道：OCS 等回复的上限是 **60 秒**，超时就当这题没搜到。这个数写在 OCS 源码里，题库配置改不了。所以别选那种要思考半天的模型。
